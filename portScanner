@@ -1,0 +1,81 @@
+#!/usr/bin/perl
+
+use Socket;
+
+#to make sure '\r' works correctly.
+$| = 1;
+
+#'my' keyword declares the variables to be local to the enclosing block,file,
+#eval. as more than 1 values are listed, we place them in parantheses.
+my ($ip,$protocol,$port,$target_sock,$target_ip,$log);
+
+#getprotobyname gives us three outputs in a list context, (name,alias,id).
+#as only one variable is specified here, we get only the id value stored in 
+#$protocol, which is the protocol number 6.
+$protocol = getprotobyname('tcp');
+
+#here we specify the variables we are taking as inputs from the command line
+($ip,$port,$port_stop,$log) = @ARGV;
+
+#if the user specifies '-h', use the function 'usage'
+if ($ip eq '-h') {
+	&usage();
+}
+
+#setting variable defaults if input not provided
+$ip = "localhost" if not $ip;
+$port = 1 if not $port;
+$port_stop = 65535 if not $port_stop;
+$log = "qsopenports.txt" if not $log;
+
+#LOG_FILE is the handler and >>$log will create the file if necessary and 
+#append the content to it.
+#'$!' will show the error associated with error number
+unless (open(LOG_FILE, ">>$log")) {
+	die "cant open log file $log for writing: $!\n"
+}
+
+#can also be written as:
+#$oldfh = select($fh);
+#$| = 1;
+#select($oldfh);
+select((select(LOG_FILE), $| = 1)[0]);
+
+#print the following in the file
+print LOG_FILE "the following ports are open on $ip between ports $port and $port_stop:\n";
+
+print "checking $ip for open ports...\n";
+
+for (; $port < $port_stop; $port += 1) {
+#creating a socket, passing the parameters SOCKET, address family(PF_INET), 
+#type(SOCK_STREAM for TCP/IP), protocol(TCP).
+	socket(SOCKET, PF_INET, SOCK_STREAM, $protocol);
+
+#'inet_aton' translates the hostname to a four-byte opaque string used for socket address.
+#'opaque' means that only the type is known and nothing else about it is interpretted.
+#'sockaddr_in' return the socket address. we need it for binding, connect, send.
+	$target_ip = inet_aton($ip);
+	$target_sock = sockaddr_in($port, $target_ip);
+
+#try to connect the socket with the server through an address.
+#if connects, print the port as open, put it in the log file, and close the connection.
+#if connection is unable to close, print 'close' with the current errno value, to STDERR.
+	if (!connect(SOCKET, $target_sock)) {
+		print "%d\r", $port;
+	} else {
+		print "%d  <- open\n", $port;
+		print LOG_FILE "$port\n";
+		close SOCKET || die "close: $!";
+	}
+}
+
+#close the log file and print the following
+close LOG_FILE || die "close: $!";
+printf "\nportscanner complete!";
+
+#defining the subroutine 'usage' and exitting from the interpreter
+sub usage() {
+	print "usage: ./portScanner [host] [start port] [end port] [log file]\n";
+	print "defaults to localhost and port 1 and port 65535 and qsopenports.txt\n";
+	exit 0;
+}
